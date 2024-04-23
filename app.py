@@ -7,13 +7,13 @@ from flask import Flask, jsonify, request
 from flask_mail import Mail
 from flask_jwt_extended import create_access_token, jwt_required, JWTManager
 import datetime
-from flask_cors import CORS
-
+from flask_cors import CORS, cross_origin
 
 app = Flask(__name__)
 mail = Mail(app)
 app.config['JWT_SECRET_KEY'] = 'code'  # Set a secret key for JWT signing
 jwt = JWTManager(app)
+CORS(app)
 CORS(app, resources={r"/*": {"origins": "http://localhost:4200"}})
 
 
@@ -41,13 +41,13 @@ def login():
     password = request.json.get('password')
     common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
     uid = common.authenticate(db, email, password, {})
-
     if uid == 2:
         # Generate JWT token for admin user
         token_payload = {'email': email, 'role': 'admin', 'name': 'Admin',
                          'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=1800)}
         access_token = create_access_token(token_payload)
         return jsonify({'token': access_token})
+
     elif uid:
         # Generate JWT token for regular user
         models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
@@ -58,6 +58,7 @@ def login():
                              'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=1800)}
             access_token = create_access_token(token_payload)
             return jsonify({'token': access_token})
+
         else:
             return jsonify({'message': 'User not found'}), 404
     else:
@@ -234,8 +235,9 @@ def get_job_applicants(job_id):
     if uid:
         models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
 
-        # Search for applicants for the specified job ID
-        if job_id == 37:
+
+        #rech app selon job id
+        if job_id == 9:
             applicant_ids = models.execute_kw(db, uid, 'T', 'hr.applicant', 'search_read',
                                               [[('name', '=', "Spontaneous Application")]],
                                               {'fields': ['name', 'partner_name', 'email_from', 'x_resume',
@@ -265,91 +267,106 @@ def get_job_applicants(job_id):
     return "Error"
 
 
-@app.post("/applyforjob")
+@app.post('/applyforjob')
 def applyforjob():
     url = 'http://localhost:8069'
     db = 'Test'
     data = request.form
-    name = data.get('name') #Name t3 Poste
-    partner_name = data.get('partner_name')
+    name = data.get('name')  # Name t3 Poste , remember to send the appropaite name in the frontend part
+    partner_name = data.get('partner_name')  # esm appliacnt
     email = data.get('email')
     job_id = int(data.get('job_id'))
-    common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
-    uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
-    if uid:
-        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
-        # Check if an application with the same email already exists
-        existing_application_ids = models.execute_kw(db, uid, 'T', 'hr.applicant', 'search',
-                                                      [[('email_from', '=', email)]])
-        if existing_application_ids:
-            return "An application with this email already exists"
-        # Read the PDF file as binary data
-        pdf_file = request.files['pdf_file']
-        file_data = pdf_file.read()
-
-        # Encode the file data as base64
-        encoded_file_data = base64.b64encode(file_data).decode('utf-8')
-
-        # Create a dictionary with job application data including the base64 encoded PDF file
-        job_application_data = {
-            'name': name,
-            'partner_name': partner_name,
-            'email_from': email,
-            'job_id': job_id,
-            'description': "PDF File Attached",
-            'x_resume': encoded_file_data  # Assign the base64 encoded file data to the x_resume field
-        }
-
-        job_application_id = models.execute_kw(db, uid, 'T', 'hr.applicant', 'create', [job_application_data])
-
-        if job_application_id:
-            return "Application Successful"
-
-    return "Error"
-
-@app.post("/spontaneousapplication")
-def spontaneous_application():
-    url = 'http://localhost:8069'
-    db = 'Test'
-    data = request.form
-    partner_name= data.get('partner_name')
-    email = data.get('email')
-    skills_list=data.get('skills_list')
     pdf_file = request.files['pdf_file']
     file_data = pdf_file.read()
     encoded_file_data = base64.b64encode(file_data).decode('utf-8')
-
     common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
     uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
     if uid:
         models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
         # Check if an application with the same email already exists
         existing_application_ids = models.execute_kw(db, uid, 'T', 'hr.applicant', 'search',
-                                                      [[('email_from', '=', email)]])
+                                                     [[('email_from', '=', email)]])
         if existing_application_ids:
-            return "An application with this email already exists"
+            return 'An application with this email already exists'
 
-        # Read the PDF file as binary data
-
-        # Create a dictionary with job application data including the base64 encoded PDF file
+        # Create the applicant record
         job_application_data = {
-            'name': "Spontaneous Application",
+            'name': name,  # Name of the job position
             'partner_name': partner_name,
             'email_from': email,
-            'job_id': 37,
-            'description': "PDF File Attached",
-            'x_resume': encoded_file_data ,
-            'x_skills_list':skills_list
+            'job_id': job_id,
         }
-        job_application_id = models.execute_kw(db, uid, 'T', 'hr.applicant', 'create', [job_application_data])
-        if job_application_id:
-            return "Application Successful"
-    return "Error"
+        applicant_id = models.execute_kw(db, uid, 'T', 'hr.applicant', 'create', [job_application_data])
+
+        # Create the attachment record
+        attachment_data = {
+            'name': 'Resume.pdf',  # Name of the attachment
+            'datas': encoded_file_data,  # Encoded file data
+            'res_model': 'hr.applicant',
+            'res_id': applicant_id,
+            'type': 'binary',
+        }
+        attachment_id = models.execute_kw(db, uid, 'T', 'ir.attachment', 'create', [attachment_data])
+
+        if attachment_id:
+            return 'Application Successful'
+
+    return 'Error2'
+
+
+@app.post("/spontaneousapplication")
+def spontaneous_application():
+
+    url = 'http://localhost:8069'
+    db = 'Test'
+    data = request.form
+    name = data.get('name')  # Name t3 Poste , remember to send the appropaite name in the frontend part
+    name= "Spontaneous Application"
+    partner_name = data.get('partner_name')  # esm appliacnt
+    email = data.get('email')
+    skills = data.get('skills')
+    pdf_file = request.files['pdf_file']
+    file_data = pdf_file.read()
+    encoded_file_data = base64.b64encode(file_data).decode('utf-8')
+    common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
+    uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
+    if uid:
+        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
+        # Check if an application with the same email already exists
+        existing_application_ids = models.execute_kw(db, uid, 'T', 'hr.applicant', 'search',
+                                                     [[('email_from', '=', email)]])
+        if existing_application_ids:
+            return 'An application with this email already exists'
+
+        # Create the applicant record
+        job_application_data = {
+            'name': name,  # Name of the job position
+            'partner_name': partner_name,
+            'email_from': email,
+            'description' : skills,
+            'job_id': 9,
+        }
+        applicant_id = models.execute_kw(db, uid, 'T', 'hr.applicant', 'create', [job_application_data])
+
+        # Create the attachment record
+        attachment_data = {
+            'name': 'Resume.pdf',  # Name of the attachment
+            'datas': encoded_file_data,  # Encoded file data
+            'res_model': 'hr.applicant',
+            'res_id': applicant_id,
+            'type': 'binary',
+        }
+        attachment_id = models.execute_kw(db, uid, 'T', 'ir.attachment', 'create', [attachment_data])
+
+        if attachment_id:
+            return 'Application Successful'
+
+    return 'Error2'
 
 
 
-@app.post("/changepassword")
-def changepw():
+@app.post("/changepassword2")
+def changepw2():
     url = 'http://localhost:8069'
     db = 'Test'
     email = request.json.get('email')
@@ -386,7 +403,116 @@ def changepw():
     else:
         return jsonify({'message': 'Error while authenticating'}), 401
 
+@app.post("/changepassword")
+@cross_origin(origins='http://localhost:4200')
+
+def changepw():
+    url = 'http://localhost:8069'
+    db = 'Test'
+    email = request.json.get('email')
+    new_password = request.json.get('new_password')
+    common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
+    uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
+    if uid:
+        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
+        user_list = models.execute_kw(db, uid, 'T', 'res.users', 'search_read', [], {'fields': ['id', 'login', 'password']})
+        user_found = False
+        for user in user_list:
+            if user['login'] == email:
+                user_found = True
+                current_id = user['id']
+                break
+        if user_found:
+            try:
+                models.execute_kw(db, uid, 'T', 'res.users', 'write', [[current_id], {'password': new_password}])
+                return jsonify({'message': 'Password changed successfully'}), 200
+            except Exception as e:
+                return jsonify({'message': 'Error while changing password0'}), 500
+        else:
+            return jsonify({'message': 'User not found'}), 404
+    else:
+        return jsonify({'message': 'Error while authenticating'}), 401
 
 
+@app.post("/change_email")
+def change_email():
+    url = 'http://localhost:8069'
+    db = 'Test'
+    old_email = request.json.get('old_email')
+    new_email = request.json.get('new_email')
+
+    common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
+    uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
+
+    if uid:
+        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
+        user_id = models.execute_kw(db, uid, 'T', 'res.users', 'search', [[('login', '=', old_email)]])
+
+        if user_id:
+            try:
+                models.execute_kw(db, uid, 'T', 'res.users', 'write', [user_id, {'login': new_email}])
+                return jsonify({'message': 'Email changed successfully'}), 200
+            except Exception as e:
+                return jsonify({'message': 'Error while changing email'}), 500
+        else:
+            return jsonify({'message': 'User not found'}), 404
+    else:
+        return jsonify({'message': 'Error while authenticating'}), 401
+
+
+@app.post("/changename")
+
+def change_name():
+    url = 'http://localhost:8069'
+    db = 'Test'
+    email = request.json.get("email")  # Now used to identify the user
+    new_name = request.json.get('new_name')
+
+    common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
+    uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
+
+    if uid:
+        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
+        user_id = models.execute_kw(db, uid, 'T', 'res.users', 'search', [[('login', '=', email)]])
+
+        if user_id:
+            try:
+                models.execute_kw(db, uid, 'T', 'res.users', 'write', [user_id, {'name': new_name}])
+                return jsonify({'message': 'Name changed successfully'}), 200
+            except Exception as e:
+                return jsonify({'message': 'Error while changing name'}), 500
+        else:
+            return jsonify({'message': 'User not found 55'}), 404
+    else:
+        return jsonify({'message': 'Error while authenticating'}), 401
+
+
+
+@app.post('/send_email')
+def send_email():
+    name = "COTNACT FROM WEBSITE"
+    email = request.json.get('email')
+    subject = request.json.get('subject')
+    message = request.json.get('message') +"   " +email
+
+    # Configure email settings
+    sender_email = email
+    receiver_email = 'aminscbg@gmail.com' #this changes to whatever the email of the receiver of each email
+    smtp_server = 'smtp.gmail.com'
+    smtp_port = 587
+    smtp_username = 'aminscbg@gmail.com'
+    smtp_password = 'bpidtptxaukyabhm'
+
+    email_content = f"From: {name} <{sender_email}>\nSubject: {subject}\n\n{message}"
+
+    try:
+        server = smtplib.SMTP(smtp_server, smtp_port)
+        server.starttls()
+        server.login(smtp_username, smtp_password)
+        server.sendmail(sender_email, receiver_email, email_content)
+        server.quit()
+        return jsonify({'message': 'Email sent successfully!'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 #tomake
 #@app.get("/applicationsmadebyuser/<int:job_id>")
