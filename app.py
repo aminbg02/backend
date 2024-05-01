@@ -3,6 +3,8 @@ import string
 import random
 import smtplib
 import xmlrpc.client
+
+import PyPDF2
 from flask import Flask, jsonify, request
 from flask_mail import Mail
 from flask_jwt_extended import create_access_token, jwt_required, JWTManager
@@ -41,24 +43,39 @@ def login():
     password = request.json.get('password')
     common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
     uid = common.authenticate(db, email, password, {})
-    if uid == 2:
-        # Generate JWT token for admin user
-        token_payload = {'email': email, 'role': 'admin', 'name': 'Admin',
-                         'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=1800)}
-        access_token = create_access_token(token_payload)
-        return jsonify({'token': access_token})
 
+    if uid == 2:
+        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
+        user_data = models.execute_kw(db, 2, 'T', 'res.users', 'search_read', [[['login', '=', email]]], {'fields': ['id', 'name']})
+        if user_data:
+            user_name = user_data[0]['name']
+            user_id = user_data[0]['id']
+            token_payload = {
+                'email': email,
+                'role': 'admin',
+                'name': user_name,
+                'user_id': user_id,
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=1800)
+            }
+            access_token = create_access_token(token_payload)
+            return jsonify({'token': access_token})
+        else:
+            return jsonify({'message': 'User not found'}), 404
     elif uid:
-        # Generate JWT token for regular user
         models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
         user_data = models.execute_kw(db, 2, 'T', 'res.users', 'search_read', [[['login', '=', email]]], {'fields': ['name']})
         if user_data:
             user_name = user_data[0]['name']
-            token_payload = {'email': email, 'role': 'user', 'name': user_name,
-                             'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=1800)}
+            user_id = user_data[0]['id']
+            token_payload = {
+                'email': email,
+                'role': 'user',
+                'name': user_name,
+                'user_id': user_id,
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=1800)
+            }
             access_token = create_access_token(token_payload)
             return jsonify({'token': access_token})
-
         else:
             return jsonify({'message': 'User not found'}), 404
     else:
@@ -99,7 +116,7 @@ def signup():
 
         if iddd:
             # Generate JWT token for the new user
-            token_payload = {'email': email, 'role': 'user', 'name': name,
+            token_payload = {'email': email, 'role': 'user', 'name': name, 'id':iddd,
                              'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=1800)}
             access_token = create_access_token(token_payload)
             return jsonify({'token': access_token}), 201
@@ -115,6 +132,7 @@ def addnewjob():
     db = 'Test'
     name = request.json.get('name')
     description = request.json.get('description')
+    manager_id =request.json.get('id')
     common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
     uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
 
@@ -126,7 +144,7 @@ def addnewjob():
             if job['name'] == name:
                 return jsonify({'message': 'Job already exists'}), 409
 
-        job_description = {'name': name, 'description': description}
+        job_description = {'name': name, 'description': description ,'user_id':manager_id}
         job_id = models.execute_kw(db, uid, 'T', 'hr.job', 'create', [job_description])
 
         if job_id:
@@ -161,51 +179,68 @@ def find_job_by_id(jobs_list, job_id):
             return job
     return None
 
+
 @app.post("/updatejob")
-def updatejob(  ):
+def updatejob():
     url = 'http://localhost:8069'
     db = 'Test'
     job_id = request.json.get('id')
     name = request.json.get('name')
+    manager_id = int(request.json.get('manager_id'))
     description = request.json.get('description')
     common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
     uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
+
     if uid:
         models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
-        jobs_list = models.execute_kw(db, uid, 'T', 'hr.job', 'search_read', [], {'fields': ['id', 'name', 'description']})
+        jobs_list = models.execute_kw(db, uid, 'T', 'hr.job', 'search_read', [],
+                                      {'fields': ['id', 'name', 'description', 'user_id']})
         job = find_job_by_id(jobs_list, job_id)
+
         if job:
-            models.execute_kw(db, uid, 'T', 'hr.job', 'write', [[job_id], {'name': name, 'description': description}])
-            return jsonify({'message': 'Job updated successfully'}), 200
+            if job['user_id'][0] == manager_id:  # Check if manager_id matches the user_id of the job
+                models.execute_kw(db, uid, 'T', 'hr.job', 'write',
+                                  [[job_id], {'name': name, 'description': description}])
+                return jsonify({'message': 'Job updated successfully'}), 200
+            else:
+                return jsonify({'message': 'Unauthorized to update this job'}), 403
         else:
             return jsonify({'message': 'Job not found'}), 404
     else:
         return jsonify({'message': 'Error while authenticating'}), 401
+
 
 @app.post("/deletejob")
 def deletejob():
     url = 'http://localhost:8069'
     db = 'Test'
     id = request.json.get('id')
+    manager_id = int(request.json.get('manager_id'))
     common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
     uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
+
     if uid:
         models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
-        jobs_list = models.execute_kw(db, uid, 'T', 'hr.job', 'search_read', [], {'fields': ['id', 'name', 'description']})
+        jobs_list = models.execute_kw(db, uid, 'T', 'hr.job', 'search_read', [],
+                                      {'fields': ['id', 'name', 'description', 'user_id']})
         job = find_job_by_id(jobs_list, id)
+
         if job:
-            job_id = job['id']
-            models.execute_kw(db, uid, 'T', 'hr.job', 'unlink', [[job_id]])
-            remaining_jobs = models.execute_kw(db, uid, 'T', 'hr.job', 'search', [[['id', '=', job_id]]])
-            if not remaining_jobs:
-                return jsonify({'message': 'Deletion successful'}), 200
+            if job['user_id'][0] == manager_id:  # Check if manager_id matches the user_id of the job
+                job_id = job['id']
+                models.execute_kw(db, uid, 'T', 'hr.job', 'unlink', [[job_id]])
+                remaining_jobs = models.execute_kw(db, uid, 'T', 'hr.job', 'search', [[['id', '=', job_id]]])
+
+                if not remaining_jobs:
+                    return jsonify({'message': 'Deletion successful'}), 200
+                else:
+                    return jsonify({'message': 'Error while deleting job'}), 500
             else:
-                return jsonify({'message': 'Error while deleting job'}), 500
+                return jsonify({'message': 'Unauthorized to delete this job'}), 403
         else:
             return jsonify({'message': 'Job not found'}), 404
     else:
         return jsonify({'message': 'Error while authenticating'}), 401
-
 
 @app.get("/getjob/<jid>")
 def get_job_detail(jid):
@@ -461,7 +496,6 @@ def change_email():
 
 
 @app.post("/changename")
-
 def change_name():
     url = 'http://localhost:8069'
     db = 'Test'
@@ -516,3 +550,18 @@ def send_email():
         return jsonify({'error': str(e)}), 500
 #tomake
 #@app.get("/applicationsmadebyuser/<int:job_id>")
+
+
+
+
+
+@app.post("/pdf")
+def managepdf():
+    url = 'http://localhost:8069'
+    pdf_file = request.files['file']
+    pdf_reader = PyPDF2.PdfFileReader(pdf_file)
+    text = ""
+    for page_num in range(pdf_reader.numPages):
+        page_obj = pdf_reader.getPage(page_num)
+        text += page_obj.extractText()
+    return text
