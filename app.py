@@ -3,6 +3,11 @@ import string
 import random
 import smtplib
 import xmlrpc.client
+import re
+from io import BytesIO
+
+from pdfminer.high_level import extract_text,extract_pages
+
 
 import PyPDF2
 from flask import Flask, jsonify, request
@@ -10,6 +15,10 @@ from flask_mail import Mail
 from flask_jwt_extended import create_access_token, jwt_required, JWTManager
 import datetime
 from flask_cors import CORS, cross_origin
+import google.generativeai as palm
+
+palm.configure(api_key="AIzaSyArdc2IgxbVsnaW2lQleyHCB4BVL6jfk1c")
+
 
 app = Flask(__name__)
 mail = Mail(app)
@@ -222,6 +231,7 @@ def deletejob():
     if uid:
         models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
         jobs_list = models.execute_kw(db, uid, 'T', 'hr.job', 'search_read', [],
+
                                       {'fields': ['id', 'name', 'description', 'user_id']})
         job = find_job_by_id(jobs_list, id)
 
@@ -348,24 +358,87 @@ def applyforjob():
 
     return 'Error2'
 
+import google.generativeai as palm
+import xmlrpc.client
+import base64
+from flask import Flask, request, jsonify
+import re
+from pdfminer.high_level import extract_text
+from io import BytesIO
+
+app = Flask(__name__)
+
+@app.get("/getalljobs")
+def getjobdetails():
+    url = 'http://localhost:8069'
+    db = 'Test'
+    common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
+    uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
+    if uid:
+        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
+        jobs_list = models.execute_kw(db, uid, 'T', 'hr.job', 'search_read', [],
+                                      {'fields': ['id', 'name', 'description']})
+        return jsonify(jobs_list)
+    else:
+        return jsonify({'message': 'Error while authenticating'}), 401
 
 @app.post("/spontaneousapplication")
 def spontaneous_application():
-
     url = 'http://localhost:8069'
     db = 'Test'
     data = request.form
     name = data.get('name')  # Name t3 Poste , remember to send the appropaite name in the frontend part
-    name= "Spontaneous Application"
+    name = "Spontaneous Application"
     partner_name = data.get('partner_name')  # esm appliacnt
     email = data.get('email')
-    skills = data.get('skills')
     pdf_file = request.files['pdf_file']
-    file_data = pdf_file.read()
-    encoded_file_data = base64.b64encode(file_data).decode('utf-8')
+    # Get all job details
+    jobs_response = getjobdetails()
+    jobs = jobs_response.json
+    # Read the content of the PDF file
+    pdf_content = pdf_file.read()
+    # Extract text from the PDF content
+    text = extract_text(BytesIO(pdf_content))
+    pattern = re.compile("[a-zA-Z]+")
+    matches = pattern.findall(text)
+    # Construct the prompt with job opportunities and descriptions
+    prompt = ("Hey Sam, I have Analyzed a candidate's resume and extracted the following list of skills and experiecne " +
+              ', '.join(matches) + "Based on these qualifications, let us see if there is s a potential match among the  job opportunities that will be mentioned at the end of this messages:  "
+                " "+
+              "Before we delve into the analysis , can you also determine if the resume text is in french and treat it accordingly ?That will help us in the evaluation."
+                    "Now lets us proceed with your insights : "
+              "1 If there is a clear match for the candidate in any of these job opportunities? if so, which one and why? "
+              "2 If there is no perfect match, which opportunity might be the closes fit based on the skills of the candidate and experience? Explain your reasoning."
+              "3 Considering the qualifications of the candidate, what job title or area do you think they would be most successful in ,even if its not directly listed here?"
+              "Please note: "
+              "-This is just a general overview of their skills . A more comprehensive evaluation may be necssary for a final decision."
+              "Some skills might be transferable,so consider if a candidate has the potenial to learn necessary skills for a particular opportunity ."
+              "I look forward to your insights! also, please at the start of the response, mention what are their skills, like a brief summary about the projects if there is any too ( please be as brief as you can , dont go over 600 characters) ")
+    for job in jobs:
+        prompt += f"Position: {job['name']}\nDescription: {job['description']}\n\n"
+
+    palm.configure(api_key="AIzaSyArdc2IgxbVsnaW2lQleyHCB4BVL6jfk1c")
+    models = [m for m in palm.list_models() if "generateText" in m.supported_generation_methods]
+    for m in models:
+        print(m.name)
+    model = models[0].name
+
+    com = palm.generate_text(
+        model=model,
+        prompt=prompt,
+        temperature=0.3,
+        max_output_tokens=800,
+    )
+
+    # Store the generated text in the 'skills' variable
+    skills = com.result
+
+    encoded_file_data = base64.b64encode(pdf_content).decode('utf-8')
     common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
     uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
+
     if uid:
+        print(matches)
         models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
         # Check if an application with the same email already exists
         existing_application_ids = models.execute_kw(db, uid, 'T', 'hr.applicant', 'search',
@@ -378,7 +451,7 @@ def spontaneous_application():
             'name': name,  # Name of the job position
             'partner_name': partner_name,
             'email_from': email,
-            'description' : skills,
+            'description': skills,  # Use the generated skills
             'job_id': 9,
         }
         applicant_id = models.execute_kw(db, uid, 'T', 'hr.applicant', 'create', [job_application_data])
@@ -397,7 +470,6 @@ def spontaneous_application():
             return 'Application Successful'
 
     return 'Error2'
-
 
 
 @app.post("/changepassword2")
