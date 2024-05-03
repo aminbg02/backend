@@ -431,8 +431,8 @@ def spontaneous_application():
     )
 
     # Store the generated text in the 'skills' variable
-    skills = com.result
-
+    skills = com.result.strip()
+    skills_formatted = "- " + "\n- ".join(skills.split("\n"))
     encoded_file_data = base64.b64encode(pdf_content).decode('utf-8')
     common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
     uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
@@ -451,7 +451,7 @@ def spontaneous_application():
             'name': name,  # Name of the job position
             'partner_name': partner_name,
             'email_from': email,
-            'description': skills,  # Use the generated skills
+            'description': skills_formatted,  # Use the generated skills
             'job_id': 9,
         }
         applicant_id = models.execute_kw(db, uid, 'T', 'hr.applicant', 'create', [job_application_data])
