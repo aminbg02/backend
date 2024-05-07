@@ -3,12 +3,6 @@ import string
 import random
 import smtplib
 import xmlrpc.client
-import re
-from io import BytesIO
-
-from pdfminer.high_level import extract_text,extract_pages
-
-
 import PyPDF2
 from flask import Flask, jsonify, request
 from flask_mail import Mail
@@ -16,16 +10,14 @@ from flask_jwt_extended import create_access_token, jwt_required, JWTManager
 import datetime
 from flask_cors import CORS, cross_origin
 import google.generativeai as palm
-
 palm.configure(api_key="AIzaSyArdc2IgxbVsnaW2lQleyHCB4BVL6jfk1c")
-
-
 app = Flask(__name__)
 mail = Mail(app)
-app.config['JWT_SECRET_KEY'] = 'code'  # Set a secret key for JWT signing
+
 jwt = JWTManager(app)
 CORS(app)
 CORS(app, resources={r"/*": {"origins": "http://localhost:4200"}})
+CORS(app, resources={r"/*": {"origins": "http://localhost:4200/jobs"}})
 
 
 
@@ -637,3 +629,155 @@ def managepdf():
         page_obj = pdf_reader.getPage(page_num)
         text += page_obj.extractText()
     return text
+
+
+
+@app.post("/deleteuser")
+def delete_user():
+    url = 'http://localhost:8069'
+    db = 'Test'
+    common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
+    uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
+    user_id = int(request.json.get('user_id'))
+
+    if uid:
+        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
+
+        if user_id:
+            try:
+                models.execute_kw(db, uid, 'T', 'res.users', 'unlink', [user_id])
+                return jsonify({'message': 'User deleted successfully'}), 200
+            except Exception as e:
+                return jsonify({'message': str(e)}), 500
+        else:
+            return jsonify({'message': 'User with this ID does not exist in  '}), 400
+    else:
+        return jsonify({'message': 'Error while authenticating'}), 401
+@app.get("/getallusers")
+def get_all_users():
+    url = 'http://localhost:8069'
+    db = 'Test'
+    common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
+    uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
+
+    if uid:
+        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
+        users_list = models.execute_kw(db, uid, 'T', 'res.users', 'search_read', [],
+                                       {'fields': ['id', 'name', 'login']})
+        return jsonify(users_list)
+    else:
+        return jsonify({'message': 'Error while authenticating'}), 401
+
+
+@app.post('/addnewuser')
+def add_user():
+    url = 'http://localhost:8069'
+    db = 'Test'
+    common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
+    uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
+    name = request.json.get('name')
+    email = request.json.get('email')
+    password = request.json.get('password')
+
+    if uid:
+        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
+        user_list = models.execute_kw(db, uid, 'T', 'res.users', 'search_read', [],
+                                      {'fields': ['login', 'password']})
+
+        for fetcher in user_list:
+            if fetcher['login'] == email:
+                return jsonify({'message': 'User already exists'}), 409
+
+        user_data = {'name': name, 'login': email, 'password': password}
+        iddd = models.execute_kw(db, uid, 'T', 'res.users', 'create', [user_data])
+
+        if iddd:
+            return jsonify({'message': "user created!"}), 201
+        else:
+            return jsonify({'message': 'Error while creating user'}), 500
+    else:
+        return jsonify({'message': 'Error while authenticating'}), 401
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@app.get("/gett")
+def gett():
+    url = 'http://localhost:8069'
+    db = 'Test'
+    #name = request.json.get('name')
+    #description = request.json.get('description')
+    common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
+    uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
+    if uid:
+        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
+        jobs_list = models.execute_kw(db, uid, 'T', 'survey.question', 'search_read', [[('title', '=', "is angular a frontend or backend framework")]],
+                                      )
+
+
+        return jsonify(jobs_list)
+    else:
+        return jsonify({'message': 'Error while authenticating'}), 401
+
+
+
+
+
+
+
+info = """
+Scheidt & Bachmann Maghreeb, a family business founded in 1872, is presently led by Dr.-Ing. Norbert Miller, representing the fifth generation of family shareholders. With a workforce of approximately 3,300 individuals from nearly 50 nations, we are dedicated to crafting innovative solutions for a dynamic world. Our focus extends beyond mere provision of barriers and machines; the crux lies in the intelligence and integration of our system solutions. Software development and service management form the core of our offerings, driving predictive, intelligent mobility solutions.
+
+Our enduring success hinges on one simple principle: belief in the capabilities of our employees. We are committed to delivering products, developments, and services of unparalleled quality to our customers, underpinned by our shared company values.
+
+These values are ingrained in our corporate culture and guide our interactions with employees, colleagues, customers, suppliers, and partners. Respect forms the cornerstone of our operations. As a socially responsible entity, we strive to harmonize business needs with employee interests, while also upholding environmental sustainability.
+
+Trust and personal responsibility are paramount in our philosophy. We place faith in the competence and potential of our team members, fostering an environment of mutual trust and accountability. Our commitment to continuous improvement fosters an atmosphere of learning and growth, where mistakes are viewed as opportunities for development.
+
+Team spirit and passion drive us towards collective success. We operate as a cohesive unit, supporting one another and celebrating shared achievements. Our goals, rooted in profitable growth and sustainable management, reflect our dedication to employee satisfaction, customer orientation, innovation, international expansion, and career development.
+
+For professionals like you, Scheidt & Bachmann offers a platform to leverage your expertise and contribute to our shared vision. Through initiatives like the #JUMP management program and lifelong learning opportunities, we encourage personal and professional development, ensuring that you reach your full potential while shaping the future of mobility with us. Join us, and together, let's redefine the boundaries of possibility in software engineering and beyond.
+"""
+
+palm.configure(api_key="AIzaSyArdc2IgxbVsnaW2lQleyHCB4BVL6jfk1c")
+models = [m for m in palm.list_models() if "generateText" in m.supported_generation_methods]
+model = models[0].name  # Replace with the desired model name
+
+@app.post('/get_response')
+def get_response():
+    """
+    Generates a response from the Palm model based on user query and company info.
+    """
+    user_query = request.json['user_query']
+
+    # Combine user query and company information in the prompt
+    prompt = (f" answer theUser's prompt : {user_query}\nconsidering this data , "
+              f"but remebmer ,just give the necssary information in your answer, "
+              f" and if the user asks anything that is not related about the company , "
+              f"just say that you are unable to answer as you are only capable to give info about the company{info}\nAssistant:")
+
+    # Generate text with Palm
+    response = palm.generate_text(
+        model=model,
+        prompt=prompt,
+        temperature=0.3,  # Adjust for creativity
+        max_output_tokens=800
+    )
+
+    return jsonify({'result': response.result})
+
+
+
+
