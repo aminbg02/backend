@@ -3,21 +3,25 @@ import string
 import random
 import smtplib
 import xmlrpc.client
+from io import BytesIO
+import re
+
 import PyPDF2
 from flask import Flask, jsonify, request
 from flask_mail import Mail
 from flask_jwt_extended import create_access_token, jwt_required, JWTManager
 import datetime
-from flask_cors import CORS, cross_origin
+from flask_cors import CORS
 import google.generativeai as palm
+from pdfminer.high_level import extract_text
+
 palm.configure(api_key="AIzaSyArdc2IgxbVsnaW2lQleyHCB4BVL6jfk1c")
+
 app = Flask(__name__)
 mail = Mail(app)
-
+app.config['JWT_SECRET_KEY'] = 'code'  # Set a secret key for JWT signing
 jwt = JWTManager(app)
-CORS(app)
 CORS(app, resources={r"/*": {"origins": "http://localhost:4200"}})
-CORS(app, resources={r"/*": {"origins": "http://localhost:4200/jobs"}})
 
 
 
@@ -35,6 +39,7 @@ def emailtest():
     server.login(email, 'bpidtptxaukyabhm')
     server.sendmail(email, reciever, text)
     return "message sent"
+
 
 @app.post("/login")
 def login():
@@ -93,8 +98,6 @@ def login():
                     return jsonify({'message': 'Incorrect Password'}), 401
             return jsonify({'message': 'Incorrect Login'}), 401
 
-
-
 @app.post("/signup")
 def signup():
     url = 'http://localhost:8069'
@@ -117,7 +120,7 @@ def signup():
 
         if iddd:
             # Generate JWT token for the new user
-            token_payload = {'email': email, 'role': 'user', 'name': name, 'id':iddd,
+            token_payload = {'email': email, 'role': 'user', 'name': name,
                              'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=1800)}
             access_token = create_access_token(token_payload)
             return jsonify({'token': access_token}), 201
@@ -136,18 +139,14 @@ def addnewjob():
     manager_id =request.json.get('id')
     common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
     uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
-
     if uid:
         models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
         jobs_list = models.execute_kw(db, uid, 'T', 'hr.job', 'search_read', [], {'fields': ['name']})
-
         for job in jobs_list:
             if job['name'] == name:
                 return jsonify({'message': 'Job already exists'}), 409
-
         job_description = {'name': name, 'description': description ,'user_id':manager_id}
         job_id = models.execute_kw(db, uid, 'T', 'hr.job', 'create', [job_description])
-
         if job_id:
             return jsonify({'message': 'Job created'}), 201
         else:
@@ -169,7 +168,8 @@ def getjobdetails():
     if uid:
         models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
         jobs_list = models.execute_kw(db, uid, 'T', 'hr.job', 'search_read', [],
-                                      {'fields': ['id','name', 'description']})
+                                      {'fields': ['id','name', 'description','user_id']})
+
         return jsonify(jobs_list)
     else:
         return jsonify({'message': 'Error while authenticating'}), 401
@@ -180,35 +180,29 @@ def find_job_by_id(jobs_list, job_id):
             return job
     return None
 
-
 @app.post("/updatejob")
-def updatejob():
+def updatejob( ):
     url = 'http://localhost:8069'
     db = 'Test'
     job_id = request.json.get('id')
     name = request.json.get('name')
-    manager_id = int(request.json.get('manager_id'))
     description = request.json.get('description')
     common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
     uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
-
     if uid:
         models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
-        jobs_list = models.execute_kw(db, uid, 'T', 'hr.job', 'search_read', [],
-                                      {'fields': ['id', 'name', 'description', 'user_id']})
+        jobs_list = models.execute_kw(db, uid, 'T', 'hr.job', 'search_read', [], {'fields': ['id', 'name', 'description']})
         job = find_job_by_id(jobs_list, job_id)
-
         if job:
-            if job['user_id'][0] == manager_id:  # Check if manager_id matches the user_id of the job
-                models.execute_kw(db, uid, 'T', 'hr.job', 'write',
-                                  [[job_id], {'name': name, 'description': description}])
-                return jsonify({'message': 'Job updated successfully'}), 200
-            else:
-                return jsonify({'message': 'Unauthorized to update this job'}), 403
+            models.execute_kw(db, uid, 'T', 'hr.job', 'write', [[job_id], {'name': name, 'description': description}])
+            return jsonify({'message': 'Job updated successfully'}), 200
         else:
             return jsonify({'message': 'Job not found'}), 404
     else:
         return jsonify({'message': 'Error while authenticating'}), 401
+
+
+
 
 
 @app.post("/deletejob")
@@ -226,9 +220,13 @@ def deletejob():
 
                                       {'fields': ['id', 'name', 'description', 'user_id']})
         job = find_job_by_id(jobs_list, id)
+        if isinstance(job['user_id'], list):
+            print(job['user_id'][0])
+        else:
+            print("user_id is not a list")
 
         if job:
-            if job['user_id'][0] == manager_id:  # Check if manager_id matches the user_id of the job
+            if job['user_id'][0]== manager_id:  # Check if manager_id matches the user_id of the job
                 job_id = job['id']
                 models.execute_kw(db, uid, 'T', 'hr.job', 'unlink', [[job_id]])
                 remaining_jobs = models.execute_kw(db, uid, 'T', 'hr.job', 'search', [[['id', '=', job_id]]])
@@ -272,9 +270,8 @@ def get_job_applicants(job_id):
     if uid:
         models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
 
-
-        #rech app selon job id
-        if job_id == 9:
+        # Search for applicants for the specified job ID
+        if job_id == 37:
             applicant_ids = models.execute_kw(db, uid, 'T', 'hr.applicant', 'search_read',
                                               [[('name', '=', "Spontaneous Application")]],
                                               {'fields': ['name', 'partner_name', 'email_from', 'x_resume',
@@ -304,75 +301,78 @@ def get_job_applicants(job_id):
     return "Error"
 
 
-@app.post('/applyforjob')
+@app.post("/applyforjob")
 def applyforjob():
     url = 'http://localhost:8069'
     db = 'Test'
     data = request.form
-    name = data.get('name')  # Name t3 Poste , remember to send the appropaite name in the frontend part
-    partner_name = data.get('partner_name')  # esm appliacnt
+    name = data.get('name') #Name t3 Poste
+    partner_name = data.get('partner_name')
     email = data.get('email')
     job_id = int(data.get('job_id'))
-    pdf_file = request.files['pdf_file']
-    file_data = pdf_file.read()
-    encoded_file_data = base64.b64encode(file_data).decode('utf-8')
     common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
     uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
     if uid:
         models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
         # Check if an application with the same email already exists
         existing_application_ids = models.execute_kw(db, uid, 'T', 'hr.applicant', 'search',
-                                                     [[('email_from', '=', email)]])
+                                                      [[('email_from', '=', email)]])
         if existing_application_ids:
-            return 'An application with this email already exists'
+            return "An application with this email already exists"
+        # Read the PDF file as binary data
+        pdf_file = request.files['pdf_file']
+        file_data = pdf_file.read()
 
-        # Create the applicant record
+        # Encode the file data as base64
+        encoded_file_data = base64.b64encode(file_data).decode('utf-8')
+
+        # Create a dictionary with job application data including the base64 encoded PDF file
         job_application_data = {
-            'name': name,  # Name of the job position
+            'name': name,
             'partner_name': partner_name,
             'email_from': email,
             'job_id': job_id,
+            'description': "PDF File Attached",
+            'x_resume': encoded_file_data  # Assign the base64 encoded file data to the x_resume field
         }
-        applicant_id = models.execute_kw(db, uid, 'T', 'hr.applicant', 'create', [job_application_data])
 
-        # Create the attachment record
-        attachment_data = {
-            'name': 'Resume.pdf',  # Name of the attachment
-            'datas': encoded_file_data,  # Encoded file data
-            'res_model': 'hr.applicant',
-            'res_id': applicant_id,
-            'type': 'binary',
-        }
-        attachment_id = models.execute_kw(db, uid, 'T', 'ir.attachment', 'create', [attachment_data])
+        job_application_id = models.execute_kw(db, uid, 'T', 'hr.applicant', 'create', [job_application_data])
 
-        if attachment_id:
-            return 'Application Successful'
+        if job_application_id:
+            return "Application Successful"
 
-    return 'Error2'
+    return "Error"
 
-import google.generativeai as palm
-import xmlrpc.client
-import base64
-from flask import Flask, request, jsonify
-import re
-from pdfminer.high_level import extract_text
-from io import BytesIO
 
-app = Flask(__name__)
+def format_skills_text(skills_text):
+    """
+    Formats a string of skills and job descriptions into a more readable format.
 
-@app.get("/getalljobs")
-def getjobdetails():
-    url = 'http://localhost:8069'
-    db = 'Test'
-    common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
-    uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
-    if uid:
-        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
-        jobs_list = models.execute_kw(db, uid, 'T', 'hr.job', 'search_read', [],
-                                      {'fields': ['id', 'name', 'description']})
-        return jsonify(jobs_list)
-    else:
-        return jsonify({'message': 'Error while authenticating'}), 401
+    Args:
+        skills_text (str): The input string to be formatted.
+
+    Returns:
+        str: The formatted string.
+    """
+    formatted_text = ""
+
+    # Split the text into sections
+    sections = skills_text.split("\n\n")
+
+    # Format each section
+    for section in sections:
+        if section.startswith("- **"):
+            # Skills section
+            formatted_text += section.replace("- **", "## ").replace("- - ", "### ") + "\n\n"
+        elif section.startswith("**Job "):
+            # Job section
+            formatted_text += section + "\n\n"
+        else:
+            # Other text
+            formatted_text += section + "\n\n"
+
+    return formatted_text
+
 
 @app.post("/spontaneousapplication")
 def spontaneous_application():
@@ -405,9 +405,10 @@ def spontaneous_application():
               "Please note: "
               "-This is just a general overview of their skills . A more comprehensive evaluation may be necssary for a final decision."
               "Some skills might be transferable,so consider if a candidate has the potenial to learn necessary skills for a particular opportunity ."
-              "I look forward to your insights! also, please at the start of the response, mention what are their skills, like a brief summary about the projects if there is any too ( please be as brief as you can , dont go over 600 characters) ")
+              "I look forward to your insights! mention the key skills they have that would fit in our company ")
     for job in jobs:
-        prompt += f"Position: {job['name']}\nDescription: {job['description']}\n\n"
+        if job['name']!="Chief Executive Officer" or job['name']!="Chief Technical Officer" :
+         prompt += f"Position: {job['name']}\nDescription: {job['description']}\n\n"
 
     palm.configure(api_key="AIzaSyArdc2IgxbVsnaW2lQleyHCB4BVL6jfk1c")
     models = [m for m in palm.list_models() if "generateText" in m.supported_generation_methods]
@@ -425,6 +426,8 @@ def spontaneous_application():
     # Store the generated text in the 'skills' variable
     skills = com.result.strip()
     skills_formatted = "- " + "\n- ".join(skills.split("\n"))
+    print("***********************************************")
+    print(format_skills_text(skills_formatted))
     encoded_file_data = base64.b64encode(pdf_content).decode('utf-8')
     common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
     uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
@@ -443,7 +446,7 @@ def spontaneous_application():
             'name': name,  # Name of the job position
             'partner_name': partner_name,
             'email_from': email,
-            'description': skills_formatted,  # Use the generated skills
+            'description': format_skills_text(skills_formatted),  # Use the generated skills
             'job_id': 9,
         }
         applicant_id = models.execute_kw(db, uid, 'T', 'hr.applicant', 'create', [job_application_data])
@@ -456,6 +459,7 @@ def spontaneous_application():
             'res_id': applicant_id,
             'type': 'binary',
         }
+
         attachment_id = models.execute_kw(db, uid, 'T', 'ir.attachment', 'create', [attachment_data])
 
         if attachment_id:
@@ -464,8 +468,8 @@ def spontaneous_application():
     return 'Error2'
 
 
-@app.post("/changepassword2")
-def changepw2():
+@app.post("/changepassword")
+def changepw():
     url = 'http://localhost:8069'
     db = 'Test'
     email = request.json.get('email')
@@ -502,61 +506,11 @@ def changepw2():
     else:
         return jsonify({'message': 'Error while authenticating'}), 401
 
-@app.post("/changepassword")
-@cross_origin(origins='http://localhost:4200')
-
-def changepw():
-    url = 'http://localhost:8069'
-    db = 'Test'
-    email = request.json.get('email')
-    new_password = request.json.get('new_password')
-    common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
-    uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
-    if uid:
-        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
-        user_list = models.execute_kw(db, uid, 'T', 'res.users', 'search_read', [], {'fields': ['id', 'login', 'password']})
-        user_found = False
-        for user in user_list:
-            if user['login'] == email:
-                user_found = True
-                current_id = user['id']
-                break
-        if user_found:
-            try:
-                models.execute_kw(db, uid, 'T', 'res.users', 'write', [[current_id], {'password': new_password}])
-                return jsonify({'message': 'Password changed successfully'}), 200
-            except Exception as e:
-                return jsonify({'message': 'Error while changing password0'}), 500
-        else:
-            return jsonify({'message': 'User not found'}), 404
-    else:
-        return jsonify({'message': 'Error while authenticating'}), 401
 
 
-@app.post("/change_email")
-def change_email():
-    url = 'http://localhost:8069'
-    db = 'Test'
-    old_email = request.json.get('old_email')
-    new_email = request.json.get('new_email')
+#tomake
+#@app.get("/applicationsmadebyuser/<int:job_id>")
 
-    common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
-    uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
-
-    if uid:
-        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
-        user_id = models.execute_kw(db, uid, 'T', 'res.users', 'search', [[('login', '=', old_email)]])
-
-        if user_id:
-            try:
-                models.execute_kw(db, uid, 'T', 'res.users', 'write', [user_id, {'login': new_email}])
-                return jsonify({'message': 'Email changed successfully'}), 200
-            except Exception as e:
-                return jsonify({'message': 'Error while changing email'}), 500
-        else:
-            return jsonify({'message': 'User not found'}), 404
-    else:
-        return jsonify({'message': 'Error while authenticating'}), 401
 
 
 @app.post("/changename")
@@ -585,40 +539,6 @@ def change_name():
         return jsonify({'message': 'Error while authenticating'}), 401
 
 
-
-@app.post('/send_email')
-def send_email():
-    name = "COTNACT FROM WEBSITE"
-    email = request.json.get('email')
-    subject = request.json.get('subject')
-    message = request.json.get('message') +"   " +email
-
-    # Configure email settings
-    sender_email = email
-    receiver_email = 'aminscbg@gmail.com' #this changes to whatever the email of the receiver of each email
-    smtp_server = 'smtp.gmail.com'
-    smtp_port = 587
-    smtp_username = 'aminscbg@gmail.com'
-    smtp_password = 'bpidtptxaukyabhm'
-
-    email_content = f"From: {name} <{sender_email}>\nSubject: {subject}\n\n{message}"
-
-    try:
-        server = smtplib.SMTP(smtp_server, smtp_port)
-        server.starttls()
-        server.login(smtp_username, smtp_password)
-        server.sendmail(sender_email, receiver_email, email_content)
-        server.quit()
-        return jsonify({'message': 'Email sent successfully!'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-#tomake
-#@app.get("/applicationsmadebyuser/<int:job_id>")
-
-
-
-
-
 @app.post("/pdf")
 def managepdf():
     url = 'http://localhost:8069'
@@ -630,6 +550,32 @@ def managepdf():
         text += page_obj.extractText()
     return text
 
+
+
+@app.post("/change_email")
+def change_email():
+    url = 'http://localhost:8069'
+    db = 'Test'
+    old_email = request.json.get('old_email')
+    new_email = request.json.get('new_email')
+
+    common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
+    uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
+
+    if uid:
+        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
+        user_id = models.execute_kw(db, uid, 'T', 'res.users', 'search', [[('login', '=', old_email)]])
+
+        if user_id:
+            try:
+                models.execute_kw(db, uid, 'T', 'res.users', 'write', [user_id, {'login': new_email}])
+                return jsonify({'message': 'Email changed successfully'}), 200
+            except Exception as e:
+                return jsonify({'message': 'Error while changing email'}), 500
+        else:
+            return jsonify({'message': 'User not found'}), 404
+    else:
+        return jsonify({'message': 'Error while authenticating'}), 401
 
 
 @app.post("/deleteuser")
@@ -701,18 +647,6 @@ def add_user():
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 @app.get("/gett")
 def gett():
     url = 'http://localhost:8069'
@@ -726,7 +660,6 @@ def gett():
         jobs_list = models.execute_kw(db, uid, 'T', 'survey.question', 'search_read', [[('title', '=', "is angular a frontend or backend framework")]],
                                       )
 
-
         return jsonify(jobs_list)
     else:
         return jsonify({'message': 'Error while authenticating'}), 401
@@ -737,26 +670,39 @@ def gett():
 
 
 
-info = """
-Scheidt & Bachmann Maghreeb, a family business founded in 1872, is presently led by Dr.-Ing. Norbert Miller, representing the fifth generation of family shareholders. With a workforce of approximately 3,300 individuals from nearly 50 nations, we are dedicated to crafting innovative solutions for a dynamic world. Our focus extends beyond mere provision of barriers and machines; the crux lies in the intelligence and integration of our system solutions. Software development and service management form the core of our offerings, driving predictive, intelligent mobility solutions.
-
-Our enduring success hinges on one simple principle: belief in the capabilities of our employees. We are committed to delivering products, developments, and services of unparalleled quality to our customers, underpinned by our shared company values.
-
-These values are ingrained in our corporate culture and guide our interactions with employees, colleagues, customers, suppliers, and partners. Respect forms the cornerstone of our operations. As a socially responsible entity, we strive to harmonize business needs with employee interests, while also upholding environmental sustainability.
-
-Trust and personal responsibility are paramount in our philosophy. We place faith in the competence and potential of our team members, fostering an environment of mutual trust and accountability. Our commitment to continuous improvement fosters an atmosphere of learning and growth, where mistakes are viewed as opportunities for development.
-
-Team spirit and passion drive us towards collective success. We operate as a cohesive unit, supporting one another and celebrating shared achievements. Our goals, rooted in profitable growth and sustainable management, reflect our dedication to employee satisfaction, customer orientation, innovation, international expansion, and career development.
-
-For professionals like you, Scheidt & Bachmann offers a platform to leverage your expertise and contribute to our shared vision. Through initiatives like the #JUMP management program and lifelong learning opportunities, we encourage personal and professional development, ensuring that you reach your full potential while shaping the future of mobility with us. Join us, and together, let's redefine the boundaries of possibility in software engineering and beyond.
-"""
-
-palm.configure(api_key="AIzaSyArdc2IgxbVsnaW2lQleyHCB4BVL6jfk1c")
-models = [m for m in palm.list_models() if "generateText" in m.supported_generation_methods]
-model = models[0].name  # Replace with the desired model name
-
 @app.post('/get_response')
 def get_response():
+    url = 'http://localhost:8069'
+    db = 'Test'
+
+    #common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
+    #uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
+    #if uid:
+        #models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
+        #jobs_list = models.execute_kw(db, uid, 'T', 'hr.job', 'search_read', [],
+                                      #{'fields': ['id', 'name', 'description']})
+    job_details = ""
+    #for job in jobs_list:
+        #job_details += f"Position: {job['name']}\nDescription: {job['description']}\n\n"
+
+
+    info = """
+    Scheidt & Bachmann Maghreeb, a family business founded in 1872, is presently led by Dr.-Ing. Norbert Miller, representing the fifth generation of family shareholders. With a workforce of approximately 3,300 individuals from nearly 50 nations, we are dedicated to crafting innovative solutions for a dynamic world. Our focus extends beyond mere provision of barriers and machines; the crux lies in the intelligence and integration of our system solutions. Software development and service management form the core of our offerings, driving predictive, intelligent mobility solutions.
+
+    Our enduring success hinges on one simple principle: belief in the capabilities of our employees. We are committed to delivering products, developments, and services of unparalleled quality to our customers, underpinned by our shared company values.
+
+    These values are ingrained in our corporate culture and guide our interactions with employees, colleagues, customers, suppliers, and partners. Respect forms the cornerstone of our operations. As a socially responsible entity, we strive to harmonize business needs with employee interests, while also upholding environmental sustainability.
+
+    Trust and personal responsibility are paramount in our philosophy. We place faith in the competence and potential of our team members, fostering an environment of mutual trust and accountability. Our commitment to continuous improvement fosters an atmosphere of learning and growth, where mistakes are viewed as opportunities for development.
+
+    Team spirit and passion drive us towards collective success. We operate as a cohesive unit, supporting one another and celebrating shared achievements. Our goals, rooted in profitable growth and sustainable management, reflect our dedication to employee satisfaction, customer orientation, innovation, international expansion, and career development.
+
+    For professionals like you, Scheidt & Bachmann offers a platform to leverage your expertise and contribute to our shared vision. Through initiatives like the #JUMP management program and lifelong learning opportunities, we encourage personal and professional development, ensuring that you reach your full potential while shaping the future of mobility with us. Join us, and together, let's redefine the boundaries of possibility in software engineering and beyond.
+    """
+    info=info+"The Job opportunities we have now are : "+job_details
+    palm.configure(api_key="AIzaSyArdc2IgxbVsnaW2lQleyHCB4BVL6jfk1c")
+    models = [m for m in palm.list_models() if "generateText" in m.supported_generation_methods]
+    model = models[0].name  # Replace with the desired model name
     """
     Generates a response from the Palm model based on user query and company info.
     """
@@ -764,7 +710,7 @@ def get_response():
 
     # Combine user query and company information in the prompt
     prompt = (f" answer theUser's prompt : {user_query}\nconsidering this data , "
-              f"but remebmer ,just give the necssary information in your answer, "
+              f"but make sure to just give the necssary information in your answer, "
               f" and if the user asks anything that is not related about the company , "
               f"just say that you are unable to answer as you are only capable to give info about the company{info}\nAssistant:")
 
@@ -780,4 +726,108 @@ def get_response():
 
 
 
+@app.get("/test1_survery_question")
+def test1():
+    url = 'http://localhost:8069'
+    db = 'Test'
+    common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
+    uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
 
+    if uid:
+        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
+        jobs_list = models.execute_kw(db, uid, 'T', 'survey.question', 'search_read', [],                                 )
+        return jsonify(jobs_list)
+    else:
+        return jsonify({'message': 'Error while authenticating'}), 401
+
+
+
+
+
+
+@app.get("/test2_surveyuser_inputline")
+def test2():
+    url = 'http://localhost:8069'
+    db = 'Test'
+    common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
+    uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
+
+    if uid:
+        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
+        jobs_list = models.execute_kw(db, uid, 'T', 'survey.user_input.line', 'search_read', [])
+        return jsonify(jobs_list)
+    else:
+        return jsonify({'message': 'Error while authenticating'}), 401
+
+
+
+@app.get("/test3_survey_question_answer")
+def test3():
+    url = 'http://localhost:8069'
+    db = 'Test'
+    common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
+    uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
+
+    if uid:
+        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
+        jobs_list = models.execute_kw(db, uid, 'T', 'survey.question.answer', 'search_read', [],)
+        return jsonify(jobs_list)
+    else:
+        return jsonify({'message': 'Error while authenticating'}), 401
+
+
+
+@app.get("/test4_survey_question_answer")
+def test4():
+    url = 'http://localhost:8069'
+    db = 'Test'
+    common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
+    uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
+    question_id=request.json.get('question_id')
+
+    if uid:
+        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
+        jobs_list = models.execute_kw(db, uid, 'T', 'survey.question.answer', 'search_read', [[['id', '=', question_id]]],)
+        return jsonify(jobs_list)
+    else:
+        return jsonify({'message': 'Error while authenticating'}), 401
+
+
+
+
+@app.post("/aaa")
+def test34():
+    url = 'http://localhost:8069/'
+    db = 'Test'
+    common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
+    uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
+    name = request.json.get("name")
+
+    if uid:
+        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
+        domain = []  # Initialize an empty domain
+        jobs_list = models.execute_kw(db, uid, 'T', 'survey.question', 'search_read', [domain],
+                                      {'fields': ['suggested_answer_ids', 'survey_id', 'display_name']})
+
+        results = []
+
+        for record in jobs_list:
+            if record['survey_id'][1] == name:
+                question_data = {
+                    "question": record["display_name"],
+                    "answers": []
+                }
+                for q in record["suggested_answer_ids"]:
+                    answers_list = models.execute_kw(db, uid, 'T', 'survey.question.answer', 'search_read',
+                                                     [[['id', '=', q]]], {'fields': ['is_correct', 'value', ]})
+                    for answer in answers_list:
+                        question_data["answers"].append(answer)
+
+                results.append(question_data)
+
+        if results:
+            return {"data": results}
+        else:
+            return {"message": 'No record found with survey_id matching "{}"'.format(name)}
+    else:
+        return {"message": 'Error while authenticating'}, 401
