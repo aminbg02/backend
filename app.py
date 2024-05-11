@@ -300,15 +300,15 @@ def get_job_applicants(job_id):
 
     return "Error"
 
-
 @app.post("/applyforjob")
 def applyforjob():
     url = 'http://localhost:8069'
     db = 'Test'
     data = request.form
-    name = data.get('name') #Name t3 Poste
+    name = data.get('name')  # Name t3 Poste
     partner_name = data.get('partner_name')
     email = data.get('email')
+    description = data.get('description')
     job_id = int(data.get('job_id'))
     common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
     uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
@@ -316,7 +316,7 @@ def applyforjob():
         models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
         # Check if an application with the same email already exists
         existing_application_ids = models.execute_kw(db, uid, 'T', 'hr.applicant', 'search',
-                                                      [[('email_from', '=', email)]])
+                                                     [[('email_from', '=', email)]])
         if existing_application_ids:
             return "An application with this email already exists"
         # Read the PDF file as binary data
@@ -332,14 +332,30 @@ def applyforjob():
             'partner_name': partner_name,
             'email_from': email,
             'job_id': job_id,
-            'description': "PDF File Attached",
+            'description': description,
             'x_resume': encoded_file_data  # Assign the base64 encoded file data to the x_resume field
         }
 
         job_application_id = models.execute_kw(db, uid, 'T', 'hr.applicant', 'create', [job_application_data])
 
         if job_application_id:
-            return "Application Successful"
+            # Create the attachment record
+            attachment_data = {
+                'name': 'Resume.pdf',  # Name of the attachment
+                'datas': encoded_file_data,  # Encoded file data
+                'res_model': 'hr.applicant',
+                'res_id': job_application_id,
+                'type': 'binary',
+            }
+
+            attachment_id = models.execute_kw(db, uid, 'T', 'ir.attachment', 'create', [attachment_data])
+
+            if attachment_id:
+                return 'Application Successful'
+            else:
+                return 'Error creating attachment'
+        else:
+            return 'Error creating job application'
 
     return "Error"
 
