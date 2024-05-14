@@ -106,6 +106,7 @@ def signup():
     email = request.json.get('email')
     password = request.json.get('password')
     common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
+
     uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
     if uid:
         models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
@@ -115,7 +116,7 @@ def signup():
             if fetcher['login'] == email:
                 return jsonify({'message': 'User already exists'}), 409
 
-        user_data = {'name': name, 'login': email, 'password': password}
+        user_data = {'name': name, 'login': email, 'password': password, 'x_can_edit': False}
         iddd = models.execute_kw(db, uid, 'T', 'res.users', 'create', [user_data])
 
         if iddd:
@@ -128,6 +129,7 @@ def signup():
             return jsonify({'message': 'Error while creating user'}), 500
     else:
         return jsonify({'message': 'Error while connecting'}), 500
+
 
 
 @app.post("/addnewjob")
@@ -217,7 +219,6 @@ def deletejob():
     if uid:
         models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
         jobs_list = models.execute_kw(db, uid, 'T', 'hr.job', 'search_read', [],
-
                                       {'fields': ['id', 'name', 'description', 'user_id']})
         job = find_job_by_id(jobs_list, id)
         if isinstance(job['user_id'], list):
@@ -228,7 +229,7 @@ def deletejob():
         if job:
             if job['user_id'][0]== manager_id:  # Check if manager_id matches the user_id of the job
                 job_id = job['id']
-                models.execute_kw(db, uid, 'T', 'hr.job', 'unlink', [[job_id]])
+                models.execute_kw(db, uid, 'T', 'hr.job', 'unlink', [[id]])
                 remaining_jobs = models.execute_kw(db, uid, 'T', 'hr.job', 'search', [[['id', '=', job_id]]])
 
                 if not remaining_jobs:
@@ -604,7 +605,6 @@ def delete_user():
 
     if uid:
         models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
-
         if user_id:
             try:
                 models.execute_kw(db, uid, 'T', 'res.users', 'unlink', [user_id])
@@ -615,6 +615,8 @@ def delete_user():
             return jsonify({'message': 'User with this ID does not exist in  '}), 400
     else:
         return jsonify({'message': 'Error while authenticating'}), 401
+
+
 @app.get("/getallusers")
 def get_all_users():
     url = 'http://localhost:8069'
@@ -625,7 +627,7 @@ def get_all_users():
     if uid:
         models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
         users_list = models.execute_kw(db, uid, 'T', 'res.users', 'search_read', [],
-                                       {'fields': ['id', 'name', 'login']})
+                                       {'fields': ['id', 'name', 'login','create_date','x_can_edit']})
         return jsonify(users_list)
     else:
         return jsonify({'message': 'Error while authenticating'}), 401
