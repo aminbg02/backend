@@ -361,6 +361,14 @@ def applyforjob():
     return "Error"
 
 
+
+
+
+
+
+
+
+
 def format_skills_text(skills_text):
     """
     Formats a string of skills and job descriptions into a more readable format.
@@ -420,9 +428,10 @@ def spontaneous_application():
               "2 If there is no perfect match, which opportunity might be the closes fit based on the skills of the candidate and experience? Explain your reasoning."
               "3 Considering the qualifications of the candidate, what job title or area do you think they would be most successful in ,even if its not directly listed here?"
               "Please note: "
-              "-This is just a general overview of their skills . A more comprehensive evaluation may be necssary for a final decision."
+            
               "Some skills might be transferable,so consider if a candidate has the potenial to learn necessary skills for a particular opportunity ."
-              "I look forward to your insights! mention the key skills they have that would fit in our company ")
+              "I look forward to your insights! mention the key skills they have that would fit in our company,  maximum 3 skills "
+              "in your response, dont say is there a clear match for the ...., just say There is no clear match and so on, goes for all the 3 questions ")
     for job in jobs:
         if job['name']!="Chief Executive Officer" or job['name']!="Chief Technical Officer" :
          prompt += f"Position: {job['name']}\nDescription: {job['description']}\n\n"
@@ -442,7 +451,7 @@ def spontaneous_application():
 
     # Store the generated text in the 'skills' variable
     skills = com.result.strip()
-    skills_formatted = "- " + "\n- ".join(skills.split("\n"))
+    skills_formatted = skills
     print("***********************************************")
     print(format_skills_text(skills_formatted))
     encoded_file_data = base64.b64encode(pdf_content).decode('utf-8')
@@ -692,47 +701,61 @@ def gett():
 def get_response():
     url = 'http://localhost:8069'
     db = 'Test'
+    user_query = request.json['user_query']
+    common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
+    uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
+    if uid:
+        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
+        jobs_list = models.execute_kw(db, uid, 'T', 'hr.job', 'search_read', [],
+                                      {'fields': ['id', 'name', 'description']})
 
-    #common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(url))
-    #uid = common.authenticate(db, 'aminscbg@gmail.com', 'T', {})
-    #if uid:
-        #models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(url))
-        #jobs_list = models.execute_kw(db, uid, 'T', 'hr.job', 'search_read', [],
-                                      #{'fields': ['id', 'name', 'description']})
     job_details = ""
-    #for job in jobs_list:
-        #job_details += f"Position: {job['name']}\nDescription: {job['description']}\n\n"
+    for job in jobs_list:
+        if len(job['name']) >= 6 and job['name'] != "Spontaneous Application":
+            job_details += f"Position: {job['name']}\nDescription: {job['description']}\n\n"
 
-
-    info = """
-    Scheidt & Bachmann Maghreeb, a family business founded in 1872, is presently led by Dr.-Ing. Norbert Miller, representing the fifth generation of family shareholders. With a workforce of approximately 3,300 individuals from nearly 50 nations, we are dedicated to crafting innovative solutions for a dynamic world. Our focus extends beyond mere provision of barriers and machines; the crux lies in the intelligence and integration of our system solutions. Software development and service management form the core of our offerings, driving predictive, intelligent mobility solutions.
-
-    Our enduring success hinges on one simple principle: belief in the capabilities of our employees. We are committed to delivering products, developments, and services of unparalleled quality to our customers, underpinned by our shared company values.
-
-    These values are ingrained in our corporate culture and guide our interactions with employees, colleagues, customers, suppliers, and partners. Respect forms the cornerstone of our operations. As a socially responsible entity, we strive to harmonize business needs with employee interests, while also upholding environmental sustainability.
-
-    Trust and personal responsibility are paramount in our philosophy. We place faith in the competence and potential of our team members, fostering an environment of mutual trust and accountability. Our commitment to continuous improvement fosters an atmosphere of learning and growth, where mistakes are viewed as opportunities for development.
-
-    Team spirit and passion drive us towards collective success. We operate as a cohesive unit, supporting one another and celebrating shared achievements. Our goals, rooted in profitable growth and sustainable management, reflect our dedication to employee satisfaction, customer orientation, innovation, international expansion, and career development.
-
-    For professionals like you, Scheidt & Bachmann offers a platform to leverage your expertise and contribute to our shared vision. Through initiatives like the #JUMP management program and lifelong learning opportunities, we encourage personal and professional development, ensuring that you reach your full potential while shaping the future of mobility with us. Join us, and together, let's redefine the boundaries of possibility in software engineering and beyond.
-    """
-    info=info+"The Job opportunities we have now are : "+job_details
-    palm.configure(api_key="AIzaSyArdc2IgxbVsnaW2lQleyHCB4BVL6jfk1c")
-    models = [m for m in palm.list_models() if "generateText" in m.supported_generation_methods]
-    model = models[0].name  # Replace with the desired model name
     """
     Generates a response from the Palm model based on user query and company info.
     """
-    user_query = request.json['user_query']
+
+    info1="""Schedit & Bachman Maghreb  is  branch of a Schedit&Bachamnn multinational company. We're proud to be part of a large network with
+     offices in many countries.We specialize in parking solutions, you can find us at     "3 Bis rue de la Teinturerie – Z.I. Sidi Rezig   
+
+         
+        
+        NO MATTER WHAT,TRY TO BE AS SHORT AS POSSIBLE MAXIMUM 4 LINES"""
+    palm.configure(api_key="AIzaSyArdc2IgxbVsnaW2lQleyHCB4BVL6jfk1c")
+
+    # Select a suitable model
+    models = [m for m in palm.list_models() if "generateText" in m.supported_generation_methods]
+    model = models[0].name  # Replace with the desired model name
 
     # Combine user query and company information in the prompt
     prompt = (f" answer theUser's prompt : {user_query}\nconsidering this data , "
-              f"but make sure to just give the necssary information in your answer, "
-              f" and if the user asks anything that is not related about the company , "
-              f"just say that you are unable to answer as you are only capable to give info about the company{info}\nAssistant:")
+              f"but remebmer ,just give the necssary information in your answer, "
+              f" and if the user asks anything that is not related about the company tell him you can not answer, "
 
-    # Generate text with Palm
+              f"If someone wants some information about the company, give them a brief summary of the info i will give you!"
+                f"If someone greets you, greet them back and ask them if they need any help , do not give information that are not asked of you"
+               f"If someoneasks anything of you, be soo brief, as brief as possible"
+              f"If someone mentions their skills and asks if there is an opprounity and in our company   there is not , tell them that now there is not but if there is an opportunity in the future it will be added to our update and keep checking "
+              f"If someoneasks anything of you, be soo brief, as brief as possible"
+         
+              f"If someone says Thank you, say you're welcome, have a great day!"
+            
+              f"   Dont ever give informaiton unless asked of them"
+              f" If someone asks in any language but english say i can only answer in english"
+              f"     If you want to apply for a job, you can visit our website and apply through the jobs insterface, or you can just do a spontanoues applicaiton ( also be brief, just say go apply , and actually, eb brief in all of your answers, give necssary information and that is enough , also, if someone asks to list all the jobs , dont mention the spontanoues application"""
+f"the answers must start with the first letter in upper case, formal answers"
+              f"If there is no job matching IF they mentioned their skills between the user's skills and the job opportunities available right now, tell them to check regulary our website as any new job will be added there"
+
+
+              )
+    prompt = prompt + "here are information that you need to take into consideration!!" + info1
+    prompt = prompt + "here are the jobs avaialble now!" + job_details
+
+
+     # Generate text with Palm
     response = palm.generate_text(
         model=model,
         prompt=prompt,
@@ -849,3 +872,32 @@ def test34():
             return {"message": 'No record found with survey_id matching "{}"'.format(name)}
     else:
         return {"message": 'Error while authenticating'}, 401
+
+
+
+@app.post('/send_email')
+def send_email():
+    name = "COTNACT FROM WEBSITE"
+    email = request.json.get('email')
+    subject = request.json.get('subject')
+    message = request.json.get('message') +"   " +email
+
+    # Configure email settings
+    sender_email = email
+    receiver_email = 'aminscbg@gmail.com' #this changes to whatever the email of the receiver of each email
+    smtp_server = 'smtp.gmail.com'
+    smtp_port = 587
+    smtp_username = 'aminscbg@gmail.com'
+    smtp_password = 'bpidtptxaukyabhm'
+
+    email_content = f"From: {name} <{sender_email}>\nSubject: {subject}\n\n{message}"
+
+    try:
+        server = smtplib.SMTP(smtp_server, smtp_port)
+        server.starttls()
+        server.login(smtp_username, smtp_password)
+        server.sendmail(sender_email, receiver_email, email_content)
+        server.quit()
+        return jsonify({'message': 'Email sent successfully!'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
