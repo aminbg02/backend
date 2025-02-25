@@ -5,6 +5,10 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="15b33866-fe1c-4c80-a44f-72360107a793" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/.idea/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/package-lock.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/Back.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/Back.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/app.py" afterDir="false" />
     </list>
@@ -20,8 +24,20 @@
       </list>
     </option>
   </component>
+  <component name="FlaskConsoleOptions" custom-start-script="import sys&#10;sys.path.extend([WORKING_DIR_AND_PYTHON_PATHS])&#10;from flask.cli import ScriptInfo&#10;locals().update(ScriptInfo(create_app=None).load_app().make_shell_context())&#10;print(&quot;Python %s on %s\nApp: %s [%s]\nInstance: %s&quot; % (sys.version, sys.platform, app.import_name, app.env, app.instance_path))">
+    <envs>
+      <env key="FLASK_APP" value="app" />
+    </envs>
+    <option name="myCustomStartScript" value="import sys&#10;sys.path.extend([WORKING_DIR_AND_PYTHON_PATHS])&#10;from flask.cli import ScriptInfo&#10;locals().update(ScriptInfo(create_app=None).load_app().make_shell_context())&#10;print(&quot;Python %s on %s\nApp: %s [%s]\nInstance: %s&quot; % (sys.version, sys.platform, app.import_name, app.env, app.instance_path))" />
+    <option name="myEnvs">
+      <map>
+        <entry key="FLASK_APP" value="app" />
+      </map>
+    </option>
+  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+    <option name="ROOT_SYNC" value="SYNC" />
   </component>
   <component name="MarkdownSettingsMigration">
     <option name="stateVersion" value="1" />
@@ -49,10 +65,34 @@
     &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
     &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
     &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;ml.llm.LLMConfigurable&quot;,
     &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
 }</component>
-  <component name="RunManager">
+  <component name="RunManager" selected="Python.Back">
+    <configuration name="Back" type="PythonConfigurationType" factoryName="Python">
+      <module name="Back" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/app.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
     <configuration name="Back" type="Python.FlaskServer">
       <module name="Back" />
       <option name="target" value="$PROJECT_DIR$/app.py" />
@@ -73,7 +113,8 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-python-sdk-d68999036c7f-b11f5e8da5ad-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-233.14475.56" />
+        <option value="bundled-js-predefined-d6986cc7102b-410509235cf1-JavaScript-PY-242.20224.428" />
+        <option value="bundled-python-sdk-80e8e15d2b92-39cff9de6eef-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-242.20224.428" />
       </set>
     </attachedChunks>
   </component>
@@ -128,7 +169,30 @@
       <workItem from="1715412422866" duration="4313000" />
       <workItem from="1715629703405" duration="27438000" />
       <workItem from="1717340295236" duration="3076000" />
-      <workItem from="1723912178164" duration="6157000" />
+      <workItem from="1723912178164" duration="6480000" />
+      <workItem from="1724661814870" duration="831000" />
+      <workItem from="1724662664095" duration="2787000" />
+      <workItem from="1724946762382" duration="604000" />
+      <workItem from="1725022382429" duration="883000" />
+      <workItem from="1725262612863" duration="6213000" />
+      <workItem from="1726677384527" duration="9230000" />
+      <workItem from="1726769430177" duration="3098000" />
+      <workItem from="1727023113498" duration="6193000" />
+      <workItem from="1727290181942" duration="1190000" />
+      <workItem from="1727380812063" duration="501000" />
+      <workItem from="1730749426508" duration="317000" />
+      <workItem from="1730749756173" duration="461000" />
+      <workItem from="1731602063880" duration="3026000" />
+      <workItem from="1732558992896" duration="421000" />
+      <workItem from="1734891888495" duration="3589000" />
+      <workItem from="1738426710186" duration="3620000" />
+      <workItem from="1738782967485" duration="1747000" />
+      <workItem from="1740080207469" duration="1259000" />
+      <workItem from="1740245868833" duration="4023000" />
+      <workItem from="1740306467789" duration="1404000" />
+      <workItem from="1740332756598" duration="1478000" />
+      <workItem from="1740388458432" duration="3295000" />
+      <workItem from="1740428692225" duration="5432000" />
     </task>
     <servers />
   </component>
